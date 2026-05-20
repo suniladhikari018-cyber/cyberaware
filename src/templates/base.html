@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}CyberAware{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            cyber: { 500: '#06b6d4', 600: '#0891b2', 700: '#0e7490' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; }
+    .flash-success { background: #d1fae5; border-left: 4px solid #10b981; color: #065f46; }
+    .flash-error   { background: #fee2e2; border-left: 4px solid #ef4444; color: #991b1b; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+{% if current_user.is_authenticated %}
+<nav class="bg-gray-900 text-white px-6 py-3 flex justify-between items-center shadow-lg">
+  <a href="{{ url_for('dashboard') }}" class="text-xl font-bold text-cyan-400">🛡️ CyberAware</a>
+  <div class="flex gap-6 text-sm">
+    <a href="{{ url_for('dashboard') }}" class="hover:text-cyan-400 transition">Dashboard</a>
+    <a href="{{ url_for('challenges') }}" class="hover:text-cyan-400 transition">Challenges</a>
+    <a href="{{ url_for('leaderboard') }}" class="hover:text-cyan-400 transition">Leaderboard</a>
+    {% if current_user.role == 'teacher' %}
+    <a href="{{ url_for('admin') }}" class="hover:text-cyan-400 transition">Admin</a>
+    {% endif %}
+    <span class="text-gray-400">|</span>
+    <span class="text-gray-300">{{ current_user.username }}</span>
+    <a href="{{ url_for('logout') }}" class="hover:text-red-400 transition">Logout</a>
+  </div>
+</nav>
+{% endif %}
+
+<div class="max-w-5xl mx-auto px-4 py-6">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="flash-{{ category }} px-4 py-3 rounded mb-4 text-sm">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</div>
+
+</body>
+</html>
