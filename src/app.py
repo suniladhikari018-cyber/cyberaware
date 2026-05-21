@@ -252,7 +252,6 @@ def admin():
     if current_user.role != 'teacher':
         flash('Access denied.', 'error')
         return redirect(url_for('dashboard'))
-
     users = User.query.all()
     user_stats = []
     for u in users:
