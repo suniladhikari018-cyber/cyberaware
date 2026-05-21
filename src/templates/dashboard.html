@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – CyberAware{% endblock %}
+{% block content %}
+
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-800">
+    Welcome back, <span class="text-cyan-600">{{ current_user.username }}</span> 👋
+  </h1>
+  <p class="text-gray-500 text-sm mt-1">
+    Role: <span class="capitalize font-medium text-gray-700">{{ current_user.role }}</span>
+  </p>
+</div>
+
+<!-- Stats Cards -->
+<div class="grid grid-cols-3 gap-4 mb-8">
+  <div class="bg-white rounded-xl shadow p-5 text-center">
+    <div class="text-3xl font-bold text-cyan-600">{{ completed }}</div>
+    <div class="text-sm text-gray-500 mt-1">of {{ total }} Completed</div>
+  </div>
+  <div class="bg-white rounded-xl shadow p-5 text-center">
+    <div class="text-3xl font-bold text-emerald-500">{{ score }}</div>
+    <div class="text-sm text-gray-500 mt-1">Total Points</div>
+  </div>
+  <div class="bg-white rounded-xl shadow p-5 text-center">
+    <div class="text-3xl font-bold text-violet-500">{{ badges|length }}</div>
+    <div class="text-sm text-gray-500 mt-1">Badges Earned</div>
+  </div>
+</div>
+
+<!-- Progress per category -->
+<div class="bg-white rounded-xl shadow p-6 mb-6">
+  <h2 class="font-semibold text-gray-800 mb-4">Category Progress</h2>
+  {% for cat, stats in cat_stats.items() %}
+  <div class="mb-4">
+    <div class="flex justify-between text-sm text-gray-600 mb-1">
+      <span>{{ cat }}</span>
+      <span>{{ stats.done }} / {{ stats.total }}</span>
+    </div>
+    <div class="w-full bg-gray-200 rounded-full h-3">
+      {% set pct = ((stats.done / stats.total) * 100)|int if stats.total > 0 else 0 %}
+      <div class="bg-cyan-500 h-3 rounded-full transition-all" style="width: {{ pct }}%"></div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Badges -->
+{% if badges %}
+<div class="bg-white rounded-xl shadow p-6 mb-6">
+  <h2 class="font-semibold text-gray-800 mb-4">Your Badges</h2>
+  <div class="flex flex-wrap gap-3">
+    {% for badge in badges %}
+    <div class="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
+      <span class="text-2xl">{{ badge.icon }}</span>
+      <div>
+        <div class="text-sm font-semibold text-gray-800">{{ badge.name }}</div>
+        <div class="text-xs text-gray-500">{{ badge.description }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Quick Actions -->
+<div class="flex gap-4">
+  <a href="{{ url_for('challenges') }}"
+     class="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-3 rounded-xl text-center transition">
+    🎯 Start Challenges
+  </a>
+  <a href="{{ url_for('leaderboard') }}"
+     class="flex-1 bg-gray-800 hover:bg-gray-900 text-white font-semibold py-3 rounded-xl text-center transition">
+    🏆 Leaderboard
+  </a>
+</div>
+
+{% endblock %}
