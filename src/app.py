@@ -37,3 +37,139 @@ def index():
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        email = request.form['email'].strip()
+        password = request.form['password']
+        role = request.form.get('role', 'student')
+
+        if User.query.filter_by(username=username).first():
+            flash('Username already exists.', 'error')
+            return render_template('register.html')
+        if User.query.filter_by(email=email).first():
+            flash('Email already registered.', 'error')
+            return render_template('register.html')
+        if len(password) < 8:
+            flash('Password must be at least 8 characters.', 'error')
+            return render_template('register.html')
+
+        totp_secret = pyotp.random_base32()
+        user = User(username=username, email=email,
+                    password_hash=generate_password_hash(password),
+                    role=role, totp_secret=totp_secret)
+        db.session.add(user)
+        db.session.commit()
+
+        # Generate QR code for 2FA setup
+        totp = pyotp.TOTP(totp_secret)
+        uri = totp.provisioning_uri(name=email, issuer_name="CyberAware")
+        qr = qrcode.make(uri)
+        buf = io.BytesIO()
+        qr.save(buf, format='PNG')
+        qr_b64 = base64.b64encode(buf.getvalue()).decode()
+
+        flash('Account created! Scan the QR code with your authenticator app.', 'success')
+        return render_template('setup_2fa.html', qr_b64=qr_b64, secret=totp_secret, username=username)
+
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+
+        if not user or not check_password_hash(user.password_hash, password):
+            flash('Invalid username or password.', 'error')
+            return render_template('login.html')
+
+        session['pre_2fa_user_id'] = user.id
+        return redirect(url_for('verify_2fa'))
+
+    return render_template('login.html')
+
+@app.route('/verify-2fa', methods=['GET', 'POST'])
+def verify_2fa():
+    user_id = session.get('pre_2fa_user_id')
+    if not user_id:
+        return redirect(url_for('login'))
+
+    user = User.query.get(user_id)
+    if request.method == 'POST':
+        token = request.form['token'].strip()
+        totp = pyotp.TOTP(user.totp_secret)
+        if totp.verify(token):
+            session.pop('pre_2fa_user_id', None)
+            login_user(user)
+            log = AuditLog(user_id=user.id, action='LOGIN', details='Successful 2FA login',
+                           ip_address=request.remote_addr)
+            db.session.add(log)
+            db.session.commit()
+            flash(f'Welcome back, {user.username}!', 'success')
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Invalid 2FA code. Try again.', 'error')
+
+    return render_template('verify_2fa.html', username=user.username)
+
+@app.route('/logout')
+@login_required
+def logout():
+    log_action('LOGOUT')
+    logout_user()
+    flash('Logged out successfully.', 'success')
+    return redirect(url_for('login'))
+
+# ─── Dashboard ────────────────────────────────────────────────────────────────
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    progress = UserProgress.query.filter_by(user_id=current_user.id).all()
+    completed = [p for p in progress if p.completed]
+    total_challenges = Challenge.query.count()
+    score = sum(p.score for p in completed)
+    badges = Badge.query.filter_by(user_id=current_user.id).all()
+    categories = db.session.query(Challenge.category).distinct().all()
+    categories = [c[0] for c in categories]
+
+    cat_stats = {}
+    for cat in categories:
+        cat_challenges = Challenge.query.filter_by(category=cat).all()
+        cat_ids = [c.id for c in cat_challenges]
+        cat_done = UserProgress.query.filter(
+            UserProgress.user_id == current_user.id,
+            UserProgress.challenge_id.in_(cat_ids),
+            UserProgress.completed == True
+        ).count()
+        cat_stats[cat] = {'total': len(cat_ids), 'done': cat_done}
+
+    return render_template('dashboard.html', completed=len(completed),
+                           total=total_challenges, score=score,
+                           badges=badges, cat_stats=cat_stats)
+
+# ─── Challenges ───────────────────────────────────────────────────────────────
+
+@app.route('/challenges')
+@login_required
+def challenges():
+    category = request.args.get('category', 'all')
+    if category == 'all':
+        chals = Challenge.query.all()
+    else:
+        chals = Challenge.query.filter_by(category=category).all()
+
+    progress_map = {}
+    for p in UserProgress.query.filter_by(user_id=current_user.id).all():
+        progress_map[p.challenge_id] = p
+
+    categories = db.session.query(Challenge.category).distinct().all()
+    categories = ['all'] + [c[0] for c in categories]
+
+    return render_template('challenges.html', challenges=chals,
+                           progress_map=progress_map, categories=categories,
+                           current_cat=category)
+
