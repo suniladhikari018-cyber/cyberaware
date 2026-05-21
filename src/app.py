@@ -173,3 +173,97 @@ def challenges():
                            progress_map=progress_map, categories=categories,
                            current_cat=category)
 
+@app.route('/challenge/<int:cid>', methods=['GET', 'POST'])
+@login_required
+def challenge(cid):
+    chal = Challenge.query.get_or_404(cid)
+    progress = UserProgress.query.filter_by(user_id=current_user.id, challenge_id=cid).first()
+
+    if request.method == 'POST':
+        answer = request.form.get('answer', '').strip()
+        options = json.loads(chal.options)
+        correct = options[chal.correct_index]
+        is_correct = (answer == correct)
+
+        if not progress:
+            progress = UserProgress(user_id=current_user.id, challenge_id=cid,
+                                    attempts=1, completed=is_correct,
+                                    score=chal.points if is_correct else 0)
+            db.session.add(progress)
+        else:
+            progress.attempts += 1
+            if not progress.completed and is_correct:
+                progress.completed = True
+                progress.score = max(chal.points - (progress.attempts - 1) * 5, 10)
+
+        db.session.commit()
+        check_and_award_badges()
+        log_action('CHALLENGE_ATTEMPT', f'Challenge {cid}, correct={is_correct}')
+
+        return jsonify({
+            'correct': is_correct,
+            'explanation': chal.explanation,
+            'score': progress.score,
+            'completed': progress.completed
+        })
+
+    return render_template('challenge.html', challenge=chal, progress=progress,
+                           options=json.loads(chal.options))
+
+def check_and_award_badges():
+    uid = current_user.id
+    completed_count = UserProgress.query.filter_by(user_id=uid, completed=True).count()
+    existing = [b.name for b in Badge.query.filter_by(user_id=uid).all()]
+
+    awards = [
+        (1, 'First Step', '🎯', 'Completed your first challenge'),
+        (5, 'Getting Started', '🔥', 'Completed 5 challenges'),
+        (10, 'Cyber Learner', '🛡️', 'Completed 10 challenges'),
+        (15, 'Security Pro', '⭐', 'Completed all 15 challenges'),
+    ]
+    for threshold, name, icon, desc in awards:
+        if completed_count >= threshold and name not in existing:
+            badge = Badge(user_id=uid, name=name, icon=icon, description=desc)
+            db.session.add(badge)
+    db.session.commit()
+
+# ─── Admin / Teacher Routes ───────────────────────────────────────────────────
+
+@app.route('/admin')
+@login_required
+def admin():
+    if current_user.role != 'teacher':
+        flash('Access denied.', 'error')
+        return redirect(url_for('dashboard'))
+
+    users = User.query.all()
+    user_stats = []
+    for u in users:
+        completed = UserProgress.query.filter_by(user_id=u.id, completed=True).count()
+        score = db.session.query(db.func.sum(UserProgress.score)).filter_by(user_id=u.id).scalar() or 0
+        user_stats.append({'user': u, 'completed': completed, 'score': score})
+
+    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(50).all()
+    return render_template('admin.html', user_stats=user_stats, logs=logs)
+
+# ─── Leaderboard ──────────────────────────────────────────────────────────────
+
+@app.route('/leaderboard')
+@login_required
+def leaderboard():
+    results = db.session.query(
+        User.username, db.func.sum(UserProgress.score).label('total_score'),
+        db.func.count(UserProgress.id).label('completed')
+    ).join(UserProgress, User.id == UserProgress.user_id)\
+     .filter(UserProgress.completed == True)\
+     .group_by(User.id)\
+     .order_by(db.desc('total_score')).all()
+
+    return render_template('leaderboard.html', results=results)
+
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+        from seed import seed_challenges
+        seed_challenges()
+    app.run(debug=True)
