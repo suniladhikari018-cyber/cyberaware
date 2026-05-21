@@ -4,8 +4,22 @@
 
 <div class="flex justify-between items-center mb-6">
   <h1 class="text-2xl font-bold text-gray-800">Challenges</h1>
-  <span class="text-sm text-gray-500">{{ challenges|length }} challenges</span>
+  <div class="flex items-center gap-3">
+    <span class="text-sm text-gray-500">{{ challenges|length }} challenges</span>
+    {% if is_teacher %}
+    <a href="{{ url_for('create_challenge') }}"
+       class="bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+      + New Challenge
+    </a>
+    {% endif %}
+  </div>
 </div>
+
+{% if is_teacher %}
+<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-blue-700 text-sm">
+  👨‍🏫 <strong>Teacher Mode:</strong> You can view challenges but cannot attempt them. Click a challenge to see its details and answer.
+</div>
+{% endif %}
 
 <!-- Category Filter -->
 <div class="flex flex-wrap gap-2 mb-6">
@@ -38,8 +52,16 @@
       </span>
       <div class="flex items-center gap-2">
         <span class="text-xs text-gray-400">{{ ch.difficulty }}</span>
-        {% if done %}
-          <span class="text-emerald-500 text-lg">✓</span>
+        {% if done %}<span class="text-emerald-500 text-lg">✓</span>{% endif %}
+        {% if is_teacher %}
+        <form method="POST" action="{{ url_for('delete_challenge', cid=ch.id) }}"
+              onsubmit="return confirm('Delete this challenge?')"
+              onclick="event.stopPropagation()">
+          <button type="submit"
+            class="text-xs text-red-400 hover:text-red-600 px-2 py-0.5 border border-red-200 rounded hover:bg-red-50 transition">
+            Delete
+          </button>
+        </form>
         {% endif %}
       </div>
     </div>
@@ -47,7 +69,9 @@
     <h3 class="font-semibold text-gray-800 mb-1">{{ ch.title }}</h3>
     <div class="flex justify-between items-center mt-3">
       <span class="text-xs text-gray-500">
-        {% if prog %}{{ prog.attempts }} attempt{{ 's' if prog.attempts != 1 else '' }}{% else %}Not started{% endif %}
+        {% if is_teacher %}View only
+        {% elif prog %}{{ prog.attempts }} attempt{{ 's' if prog.attempts != 1 else '' }}
+        {% else %}Not started{% endif %}
       </span>
       <span class="text-sm font-bold text-cyan-600">{{ ch.points }} pts</span>
     </div>

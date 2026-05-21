@@ -11,7 +11,46 @@
   </p>
 </div>
 
-<!-- Stats Cards -->
+{% if is_teacher %}
+<!-- Teacher Dashboard -->
+<div class="grid grid-cols-2 gap-4 mb-8">
+  <div class="bg-white rounded-xl shadow p-5 text-center">
+    <div class="text-3xl font-bold text-cyan-600">{{ total }}</div>
+    <div class="text-sm text-gray-500 mt-1">Total Challenges</div>
+  </div>
+  <div class="bg-white rounded-xl shadow p-5 text-center">
+    <div class="text-3xl font-bold text-violet-500">{{ cat_stats|length }}</div>
+    <div class="text-sm text-gray-500 mt-1">Categories</div>
+  </div>
+</div>
+
+<div class="bg-white rounded-xl shadow p-6 mb-6">
+  <h2 class="font-semibold text-gray-800 mb-4">Challenges by Category</h2>
+  {% for cat, stats in cat_stats.items() %}
+  <div class="flex justify-between items-center py-2 border-b last:border-0">
+    <span class="text-sm text-gray-700">{{ cat }}</span>
+    <span class="text-sm font-semibold text-cyan-600">{{ stats.total }} challenges</span>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="flex gap-4">
+  <a href="{{ url_for('challenges') }}"
+     class="flex-1 bg-gray-800 hover:bg-gray-900 text-white font-semibold py-3 rounded-xl text-center transition">
+    📋 View Challenges
+  </a>
+  <a href="{{ url_for('create_challenge') }}"
+     class="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-3 rounded-xl text-center transition">
+    ➕ Create Challenge
+  </a>
+  <a href="{{ url_for('admin') }}"
+     class="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-semibold py-3 rounded-xl text-center transition">
+    👨‍🏫 Admin Panel
+  </a>
+</div>
+
+{% else %}
+<!-- Student Dashboard -->
 <div class="grid grid-cols-3 gap-4 mb-8">
   <div class="bg-white rounded-xl shadow p-5 text-center">
     <div class="text-3xl font-bold text-cyan-600">{{ completed }}</div>
@@ -27,7 +66,6 @@
   </div>
 </div>
 
-<!-- Progress per category -->
 <div class="bg-white rounded-xl shadow p-6 mb-6">
   <h2 class="font-semibold text-gray-800 mb-4">Category Progress</h2>
   {% for cat, stats in cat_stats.items() %}
@@ -38,13 +76,12 @@
     </div>
     <div class="w-full bg-gray-200 rounded-full h-3">
       {% set pct = ((stats.done / stats.total) * 100)|int if stats.total > 0 else 0 %}
-      <div class="bg-cyan-500 h-3 rounded-full transition-all" style="width: {{ pct }}%"></div>
+      <div class="bg-cyan-500 h-3 rounded-full" style="width: {{ pct }}%"></div>
     </div>
   </div>
   {% endfor %}
 </div>
 
-<!-- Badges -->
 {% if badges %}
 <div class="bg-white rounded-xl shadow p-6 mb-6">
   <h2 class="font-semibold text-gray-800 mb-4">Your Badges</h2>
@@ -62,7 +99,6 @@
 </div>
 {% endif %}
 
-<!-- Quick Actions -->
 <div class="flex gap-4">
   <a href="{{ url_for('challenges') }}"
      class="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-3 rounded-xl text-center transition">
@@ -73,5 +109,6 @@
     🏆 Leaderboard
   </a>
 </div>
+{% endif %}
 
 {% endblock %}

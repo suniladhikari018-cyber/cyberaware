@@ -29,7 +29,7 @@ def log_action(action, details=""):
         db.session.add(log)
         db.session.commit()
 
-# ─── Auth Routes ────────────────────────────────────────────────────────────────
+# ─── Auth Routes ─────────────────────────────────────────────────────────────
 
 @app.route('/')
 def index():
@@ -62,7 +62,6 @@ def register():
         db.session.add(user)
         db.session.commit()
 
-        # Generate QR code for 2FA setup
         totp = pyotp.TOTP(totp_secret)
         uri = totp.provisioning_uri(name=email, issuer_name="CyberAware")
         qr = qrcode.make(uri)
@@ -128,6 +127,17 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    # Teachers get a simplified dashboard (no personal progress)
+    if current_user.role == 'teacher':
+        total_challenges = Challenge.query.count()
+        categories = db.session.query(Challenge.category).distinct().all()
+        categories = [c[0] for c in categories]
+        cat_stats = {}
+        for cat in categories:
+            cat_stats[cat] = {'total': Challenge.query.filter_by(category=cat).count(), 'done': 0}
+        return render_template('dashboard.html', completed=0, total=total_challenges,
+                               score=0, badges=[], cat_stats=cat_stats, is_teacher=True)
+
     progress = UserProgress.query.filter_by(user_id=current_user.id).all()
     completed = [p for p in progress if p.completed]
     total_challenges = Challenge.query.count()
@@ -149,7 +159,7 @@ def dashboard():
 
     return render_template('dashboard.html', completed=len(completed),
                            total=total_challenges, score=score,
-                           badges=badges, cat_stats=cat_stats)
+                           badges=badges, cat_stats=cat_stats, is_teacher=False)
 
 # ─── Challenges ───────────────────────────────────────────────────────────────
 
@@ -163,19 +173,26 @@ def challenges():
         chals = Challenge.query.filter_by(category=category).all()
 
     progress_map = {}
-    for p in UserProgress.query.filter_by(user_id=current_user.id).all():
-        progress_map[p.challenge_id] = p
+    if current_user.role != 'teacher':
+        for p in UserProgress.query.filter_by(user_id=current_user.id).all():
+            progress_map[p.challenge_id] = p
 
     categories = db.session.query(Challenge.category).distinct().all()
     categories = ['all'] + [c[0] for c in categories]
 
     return render_template('challenges.html', challenges=chals,
                            progress_map=progress_map, categories=categories,
-                           current_cat=category)
+                           current_cat=category, is_teacher=(current_user.role == 'teacher'))
 
 @app.route('/challenge/<int:cid>', methods=['GET', 'POST'])
 @login_required
 def challenge(cid):
+    # Teachers can only view, not attempt
+    if current_user.role == 'teacher':
+        chal = Challenge.query.get_or_404(cid)
+        return render_template('challenge.html', challenge=chal, progress=None,
+                               options=json.loads(chal.options), is_teacher=True)
+
     chal = Challenge.query.get_or_404(cid)
     progress = UserProgress.query.filter_by(user_id=current_user.id, challenge_id=cid).first()
 
@@ -208,7 +225,7 @@ def challenge(cid):
         })
 
     return render_template('challenge.html', challenge=chal, progress=progress,
-                           options=json.loads(chal.options))
+                           options=json.loads(chal.options), is_teacher=False)
 
 def check_and_award_badges():
     uid = current_user.id
@@ -216,10 +233,10 @@ def check_and_award_badges():
     existing = [b.name for b in Badge.query.filter_by(user_id=uid).all()]
 
     awards = [
-        (1, 'First Step', '🎯', 'Completed your first challenge'),
-        (5, 'Getting Started', '🔥', 'Completed 5 challenges'),
+        (1,  'First Step',    '🎯', 'Completed your first challenge'),
+        (5,  'Getting Started','🔥', 'Completed 5 challenges'),
         (10, 'Cyber Learner', '🛡️', 'Completed 10 challenges'),
-        (15, 'Security Pro', '⭐', 'Completed all 15 challenges'),
+        (15, 'Security Pro',  '⭐', 'Completed all 15 challenges'),
     ]
     for threshold, name, icon, desc in awards:
         if completed_count >= threshold and name not in existing:
@@ -244,9 +261,65 @@ def admin():
         user_stats.append({'user': u, 'completed': completed, 'score': score})
 
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(50).all()
-    return render_template('admin.html', user_stats=user_stats, logs=logs)
+    all_challenges = Challenge.query.order_by(Challenge.category).all()
+    return render_template('admin.html', user_stats=user_stats, logs=logs,
+                           all_challenges=all_challenges)
 
-# ─── Leaderboard ──────────────────────────────────────────────────────────────
+@app.route('/admin/challenge/new', methods=['GET', 'POST'])
+@login_required
+def create_challenge():
+    if current_user.role != 'teacher':
+        flash('Access denied.', 'error')
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        title      = request.form['title'].strip()
+        category   = request.form['category'].strip()
+        description= request.form['description'].strip()
+        difficulty = request.form['difficulty']
+        points     = int(request.form.get('points', 20))
+        opt0 = request.form['opt0'].strip()
+        opt1 = request.form['opt1'].strip()
+        opt2 = request.form['opt2'].strip()
+        opt3 = request.form['opt3'].strip()
+        correct_index = int(request.form['correct_index'])
+        explanation = request.form['explanation'].strip()
+
+        if not all([title, category, description, opt0, opt1, opt2, opt3, explanation]):
+            flash('All fields are required.', 'error')
+            return render_template('create_challenge.html')
+
+        ch = Challenge(
+            title=title, category=category, description=description,
+            options=json.dumps([opt0, opt1, opt2, opt3]),
+            correct_index=correct_index, explanation=explanation,
+            points=points, difficulty=difficulty
+        )
+        db.session.add(ch)
+        db.session.commit()
+        log_action('CREATE_CHALLENGE', f'Created challenge: {title}')
+        flash(f'Challenge "{title}" created successfully!', 'success')
+        return redirect(url_for('admin'))
+
+    return render_template('create_challenge.html')
+
+@app.route('/admin/challenge/delete/<int:cid>', methods=['POST'])
+@login_required
+def delete_challenge(cid):
+    if current_user.role != 'teacher':
+        flash('Access denied.', 'error')
+        return redirect(url_for('dashboard'))
+
+    ch = Challenge.query.get_or_404(cid)
+    # Remove related progress records first
+    UserProgress.query.filter_by(challenge_id=cid).delete()
+    db.session.delete(ch)
+    db.session.commit()
+    log_action('DELETE_CHALLENGE', f'Deleted challenge id={cid}')
+    flash('Challenge deleted.', 'success')
+    return redirect(url_for('admin'))
+
+# ─── Leaderboard ─────────────────────────────────────────────────────────────
 
 @app.route('/leaderboard')
 @login_required
